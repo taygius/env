@@ -175,7 +175,42 @@ $ SECRET=/tmp/secret  \
 {Secret:qwerty Password:dvorak Certificate:coleman}
 ```
 
+
+## From another providers
+
+Example below tries to get `PORT` from environment. Then, if `PORT` not exists in environment, tries to get variable from consul's kv `PORT`.
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+	"github.com/caarlos0/env"
+)
+
+type config struct {
+	Port       string   `env:"PORT"`
+}
+
+func main() {
+	consulProvider := func(key string) (string, bool) {
+		kvPair, _, err := consulClient.KV().Get(key, nil)
+		if err != nil {
+			return "", false
+		}
+		return string(pair.Value), true
+	}
+
+	cfg := config{}
+	if err := env.Parse(&cfg, env.ENVProvider, consulProvider); err != nil {
+		fmt.Printf("%+v\n", err)
+	}
+
+	fmt.Printf("%+v\n", cfg)
+}
+```
+
 ## Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/caarlos0/env.svg)](https://starchart.cc/caarlos0/env)
-

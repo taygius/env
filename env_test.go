@@ -1184,3 +1184,84 @@ func TestFileWithDefault(t *testing.T) {
 	assert.Equal(t, "secret", cfg.SecretKey)
 
 }
+
+func TestSimpleParsesWithCustomProvider(t *testing.T) {
+	var provider Provider = func(key string) (string, bool) {
+		switch key {
+		case "STRING":
+			return "str1", true
+		case "BOOL":
+			return "true", true
+
+		}
+		return "", false
+	}
+
+	var cfg = Config{}
+	require.NoError(t, Parse(&cfg, provider))
+
+	assert.Equal(t, "str1", cfg.String)
+	assert.Equal(t, true, cfg.Bool)
+
+	assert.Empty(t, cfg.NotAnEnv)
+
+	assert.Empty(t, cfg.unexported)
+}
+
+func TestSimpleParsesWithCustomProviderInOrder(t *testing.T) {
+
+	type Config struct {
+		Foo string `env:"FOO"`
+	}
+
+	provider1 := func(key string) (string, bool) {
+		return "foo", true
+	}
+	provider2 := func(key string) (string, bool) {
+		return "bar", true
+	}
+	provider3 := func(key string) (string, bool) {
+		return "", false
+	}
+
+	var cfg Config
+
+	cfg = Config{}
+	require.NoError(t, Parse(&cfg, provider1, provider2, provider3)) // foo, bar, empty -> should be foo
+	assert.Equal(t, "foo", cfg.Foo)
+
+	cfg = Config{}
+	require.NoError(t, Parse(&cfg, provider3, provider1, provider2)) //  empty, foo, bar -> should be foo
+	assert.Equal(t, "foo", cfg.Foo)
+
+	cfg = Config{}
+	require.NoError(t, Parse(&cfg, provider2, provider3, provider1)) //  bar, foo, empty -> should be bar
+	assert.Equal(t, "bar", cfg.Foo)
+}
+
+func TestSimpleParsesWithCustomProviderOneAfterAnother(t *testing.T) {
+	type Config struct {
+		Foo string `env:"FOO"`
+	}
+
+	provider1 := func(key string) (string, bool) {
+		return "foo", true
+	}
+	provider2 := func(key string) (string, bool) {
+		return "bar", true
+	}
+	provider3 := func(key string) (string, bool) {
+		return "", false
+	}
+
+	var cfg = Config{}
+
+	require.NoError(t, Parse(&cfg, provider1)) // foo
+	assert.Equal(t, "foo", cfg.Foo)
+
+	require.NoError(t, Parse(&cfg, provider2)) // bar -> redeclare var
+	assert.Equal(t, "bar", cfg.Foo)
+
+	require.NoError(t, Parse(&cfg, provider3)) //  empty -> won't redeclare
+	assert.Equal(t, "bar", cfg.Foo)
+}
