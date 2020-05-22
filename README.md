@@ -178,7 +178,7 @@ $ SECRET=/tmp/secret  \
 
 ## From another providers
 
-Example below tries to get `PORT` from environment. Then, if `PORT` not exists in environment, tries to get variable from consul's kv `PORT`.
+Example below tries to get `PORT` from consul. Then, if `PORT` not found, tries to get `PORT` from environment.
 
 ```go
 package main
@@ -187,15 +187,22 @@ import (
 	"fmt"
 	"time"
 	"github.com/caarlos0/env"
+    "github.com/hashicorp/consul/api"
 )
 
 type config struct {
+    Host       string   `env:"HOST"`
 	Port       string   `env:"PORT"`
 }
 
 func main() {
+    client, err := api.NewClient(api.DefaultConfig())
+    if err != nil {
+        panic(err)
+    }
+
 	consulProvider := func(key string) (string, bool) {
-		kvPair, _, err := consulClient.KV().Get(key, nil)
+		pair, _, err := client.KV().Get(key, nil)
 		if err != nil {
 			return "", false
 		}
@@ -203,12 +210,22 @@ func main() {
 	}
 
 	cfg := config{}
-	if err := env.Parse(&cfg, env.ENVProvider, consulProvider); err != nil {
+	if err := env.Parse(&cfg, consulProvider, env.ENVProvider); err != nil {
 		fmt.Printf("%+v\n", err)
 	}
 
 	fmt.Printf("%+v\n", cfg)
 }
+```
+
+```bash
+$ curl --request PUT --data super.app.com http://127.0.0.1:8500/v1/kv/HOST
+$ HOST=default.app.com PORT=8080 go run main.go
+
+{Host:super.app.com Port:8080}
+
+
+
 ```
 
 ## Stargazers over time
