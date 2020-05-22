@@ -1235,8 +1235,13 @@ func TestSimpleParsesWithCustomProviderInOrder(t *testing.T) {
 	assert.Equal(t, "foo", cfg.Foo)
 
 	cfg = Config{}
-	require.NoError(t, Parse(&cfg, provider2, provider3, provider1)) //  bar, foo, empty -> should be bar
+	require.NoError(t, Parse(&cfg, provider2, provider3, provider1)) //  bar, empty, foo -> should be bar
 	assert.Equal(t, "bar", cfg.Foo)
+
+	cfg = Config{}
+	require.NoError(t, Parse(&cfg, provider3)) //  empty -> should be empty
+	assert.Equal(t, "", cfg.Foo)
+
 }
 
 func TestSimpleParsesWithCustomProviderOneAfterAnother(t *testing.T) {
