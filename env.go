@@ -95,15 +95,20 @@ var (
 // ParserFunc defines the signature of a function that can be used within `CustomParsers`
 type ParserFunc func(v string) (interface{}, error)
 
+// ParserFunc defines the signature of a provider
+type Provider func(key string) (string, bool)
+
+var ENVProvider = os.LookupEnv
+
 // Parse parses a struct containing `env` tags and loads its values from
 // environment variables.
-func Parse(v interface{}) error {
-	return ParseWithFuncs(v, map[reflect.Type]ParserFunc{})
+func Parse(v interface{}, providers ...Provider) error {
+	return ParseWithFuncs(v, map[reflect.Type]ParserFunc{}, providers...)
 }
 
 // ParseWithFuncs is the same as `Parse` except it also allows the user to pass
 // in custom parsers.
-func ParseWithFuncs(v interface{}, funcMap map[reflect.Type]ParserFunc) error {
+func ParseWithFuncs(v interface{}, funcMap map[reflect.Type]ParserFunc, providers ...Provider) error {
 	ptrRef := reflect.ValueOf(v)
 	if ptrRef.Kind() != reflect.Ptr {
 		return ErrNotAStructPtr
@@ -116,10 +121,13 @@ func ParseWithFuncs(v interface{}, funcMap map[reflect.Type]ParserFunc) error {
 	for k, v := range funcMap {
 		parsers[k] = v
 	}
-	return doParse(ref, parsers)
+	if len(providers) == 0 {
+		providers = append(providers, ENVProvider)
+	}
+	return doParse(ref, parsers, providers...)
 }
 
-func doParse(ref reflect.Value, funcMap map[reflect.Type]ParserFunc) error {
+func doParse(ref reflect.Value, funcMap map[reflect.Type]ParserFunc, providers ...Provider) error {
 	var refType = ref.Type()
 
 	for i := 0; i < refType.NumField(); i++ {
@@ -128,27 +136,27 @@ func doParse(ref reflect.Value, funcMap map[reflect.Type]ParserFunc) error {
 			continue
 		}
 		if reflect.Ptr == refField.Kind() && !refField.IsNil() {
-			err := ParseWithFuncs(refField.Interface(), funcMap)
+			err := ParseWithFuncs(refField.Interface(), funcMap, providers...)
 			if err != nil {
 				return err
 			}
 			continue
 		}
 		if reflect.Struct == refField.Kind() && refField.CanAddr() && refField.Type().Name() == "" {
-			err := Parse(refField.Addr().Interface())
+			err := Parse(refField.Addr().Interface(), providers...)
 			if err != nil {
 				return err
 			}
 			continue
 		}
 		refTypeField := refType.Field(i)
-		value, err := get(refTypeField)
+		value, err := get(refTypeField, providers...)
 		if err != nil {
 			return err
 		}
 		if value == "" {
 			if reflect.Struct == refField.Kind() {
-				if err := doParse(refField, funcMap); err != nil {
+				if err := doParse(refField, funcMap, providers...); err != nil {
 					return err
 				}
 			}
@@ -161,7 +169,7 @@ func doParse(ref reflect.Value, funcMap map[reflect.Type]ParserFunc) error {
 	return nil
 }
 
-func get(field reflect.StructField) (val string, err error) {
+func get(field reflect.StructField, providers ...Provider) (val string, err error) {
 	var required bool
 	var exists bool
 	var loadFile bool
@@ -182,8 +190,15 @@ func get(field reflect.StructField) (val string, err error) {
 		}
 	}
 
-	defaultValue := field.Tag.Get("envDefault")
-	val, exists = getOr(key, defaultValue)
+	for _, provider := range providers {
+		if val, exists = provider(key); exists {
+			break
+		}
+	}
+
+	if !exists {
+		val = field.Tag.Get("envDefault")
+	}
 
 	if expand {
 		val = os.ExpandEnv(val)
@@ -213,14 +228,6 @@ func parseKeyForOption(key string) (string, []string) {
 func getFromFile(filename string) (value string, err error) {
 	b, err := ioutil.ReadFile(filename)
 	return string(b), err
-}
-
-func getOr(key, defaultValue string) (value string, exists bool) {
-	value, exists = os.LookupEnv(key)
-	if !exists {
-		value = defaultValue
-	}
-	return value, exists
 }
 
 func set(field reflect.Value, sf reflect.StructField, value string, funcMap map[reflect.Type]ParserFunc) error {
