@@ -1,5 +1,3 @@
-module github.com/caarlos0/env/v6
+module github.com/taygius/gocfg/v7
 
-require github.com/stretchr/testify v1.5.1
-
-go 1.13
+go 1.14
